@@ -58,7 +58,7 @@ type BulkScheduleResponse = {
 type ScheduledCountResponse = {
   ok: boolean;
   count: number | null;
-  limit?: number | null;
+  limit: null;
   message: string | null;
 };
 
@@ -81,7 +81,6 @@ export default function ClipFlowPage() {
   const [boardsLoading, setBoardsLoading] = useState(true);
   const [boardsMessage, setBoardsMessage] = useState<string | null>(null);
   const [count, setCount] = useState<number | null>(null);
-  const [countLimit, setCountLimit] = useState<number | null>(null);
   const [countLoading, setCountLoading] = useState(true);
   const [countMessage, setCountMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -172,7 +171,6 @@ export default function ClipFlowPage() {
         }
 
         setCount(data.count);
-        setCountLimit(typeof data.limit === "number" ? data.limit : null);
       } catch (error) {
         if (!isMounted) {
           return;
@@ -180,7 +178,6 @@ export default function ClipFlowPage() {
 
         const message = error instanceof Error ? error.message : "Failed to load scheduled post count.";
         setCount(null);
-        setCountLimit(null);
         setCountMessage(message);
       } finally {
         if (isMounted) {
@@ -315,7 +312,6 @@ export default function ClipFlowPage() {
 
       if (countResponse.ok && countData.ok) {
         setCount(countData.count);
-        setCountLimit(typeof countData.limit === "number" ? countData.limit : null);
         setCountMessage(null);
       }
     } catch (error) {
@@ -353,9 +349,9 @@ export default function ClipFlowPage() {
               ? "Loading scheduled Buffer posts..."
               : countMessage
                 ? "Scheduled in Buffer: unavailable"
-                : countLimit !== null
-                  ? `Scheduled in Buffer: ${count ?? 0} of ${countLimit} posts`
-                  : `Scheduled in Buffer: ${count ?? 0} posts`}
+                : count !== null
+                  ? `Scheduled in Buffer: ${count} posts`
+                  : "Scheduled in Buffer: unavailable"}
           </p>
           {countMessage && <p className="mt-1 text-sm text-stone-600">{countMessage}</p>}
         </section>

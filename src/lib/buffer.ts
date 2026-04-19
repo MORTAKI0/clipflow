@@ -74,9 +74,7 @@ type OrganizationsGraphQLResponse = {
     account?: {
       organizations?: Array<{
         id?: string | null;
-        limits?: {
-          scheduledPosts?: number | null;
-        } | null;
+        name?: string | null;
       }> | null;
     } | null;
   };
@@ -177,16 +175,14 @@ const GET_ORGANIZATIONS_QUERY = `
     account {
       organizations {
         id
-        limits {
-          scheduledPosts
-        }
+        name
       }
     }
   }
 `;
 
 const GET_SCHEDULED_POSTS_COUNT_QUERY = `
-  query GetScheduledPostsCount($first: Int!, $after: Cursor, $input: PostsInput!) {
+  query GetScheduledPostsCount($first: Int!, $after: String, $input: PostsInput!) {
     posts(first: $first, after: $after, input: $input) {
       totalCount
       edges {
@@ -218,7 +214,7 @@ type PinterestBoardsFailureResult = {
 type ScheduledPostsCountSuccessResult = {
   ok: true;
   count: number;
-  limit: number | null;
+  limit: null;
 };
 
 type ScheduledPostsCountFailureResult = {
@@ -315,7 +311,7 @@ export async function getScheduledPostsCount(): Promise<
     }
 
     const organization = organizationsResult.data?.account?.organizations?.find(
-      (item): item is { id: string; limits?: { scheduledPosts?: number | null } | null } =>
+      (item): item is { id: string; name?: string | null } =>
         typeof item?.id === "string" && item.id.length > 0
     );
 
@@ -361,7 +357,7 @@ export async function getScheduledPostsCount(): Promise<
     return {
       ok: true,
       count,
-      limit: typeof organization.limits?.scheduledPosts === "number" ? organization.limits.scheduledPosts : null,
+      limit: null,
     };
   } catch (error) {
     console.error("Buffer scheduled count request failed:", error);
