@@ -7,6 +7,11 @@ type CreateBufferPostArgs = {
   pinTitle?: string;
 };
 
+export type PinterestBoard = {
+  serviceId: string;
+  name: string | null;
+};
+
 type GraphQLErrorItem = {
   message?: string;
   extensions?: {
@@ -48,6 +53,22 @@ type BufferGraphQLResponse = {
   errors?: GraphQLErrorItem[];
 };
 
+type PinterestBoardsGraphQLResponse = {
+  data?: {
+    channel?: {
+      metadata?: {
+        __typename?: string;
+        boards?: Array<{
+          serviceId?: string | null;
+          name?: string | null;
+          displayName?: string | null;
+        }> | null;
+      } | null;
+    } | null;
+  };
+  errors?: GraphQLErrorItem[];
+};
+
 const CREATE_POST_MUTATION = `
   mutation CreatePost($input: CreatePostInput!) {
     createPost(input: $input) {
@@ -65,6 +86,159 @@ const CREATE_POST_MUTATION = `
     }
   }
 `;
+
+const GET_PINTEREST_BOARDS_WITH_NAMES_QUERY = `
+  query GetPinterestBoards($input: ChannelInput!) {
+    channel(input: $input) {
+      metadata {
+        __typename
+        ... on PinterestMetadata {
+          boards {
+            serviceId
+            name
+            displayName
+          }
+        }
+      }
+    }
+  }
+`;
+
+const GET_PINTEREST_BOARDS_WITH_NAME_QUERY = `
+  query GetPinterestBoards($input: ChannelInput!) {
+    channel(input: $input) {
+      metadata {
+        __typename
+        ... on PinterestMetadata {
+          boards {
+            serviceId
+            name
+          }
+        }
+      }
+    }
+  }
+`;
+
+const GET_PINTEREST_BOARDS_QUERY = `
+  query GetPinterestBoards($input: ChannelInput!) {
+    channel(input: $input) {
+      metadata {
+        __typename
+        ... on PinterestMetadata {
+          boards {
+            serviceId
+          }
+        }
+      }
+    }
+  }
+`;
+
+type PinterestBoardsSuccessResult = {
+  ok: true;
+  boards: PinterestBoard[];
+};
+
+type PinterestBoardsFailureResult = {
+  ok: false;
+  message: string;
+};
+
+export async function getPinterestBoards(): Promise<PinterestBoardsSuccessResult | PinterestBoardsFailureResult> {
+  const apiKey = process.env.BUFFER_API_KEY;
+  const channelId = process.env.BUFFER_PINTEREST_CHANNEL_ID;
+
+  if (!apiKey || !channelId) {
+    return {
+      ok: false,
+      message: "Buffer API configuration is missing.",
+    };
+  }
+
+  try {
+    const resultWithNames = await runPinterestBoardsQuery(apiKey, channelId, GET_PINTEREST_BOARDS_WITH_NAMES_QUERY);
+    const invalidDisplayName = hasInvalidField(resultWithNames.errors, "displayName");
+    const invalidName = hasInvalidField(resultWithNames.errors, "name");
+
+    let result = resultWithNames;
+
+    if (invalidDisplayName && !invalidName) {
+      result = await runPinterestBoardsQuery(apiKey, channelId, GET_PINTEREST_BOARDS_WITH_NAME_QUERY);
+    } else if (invalidDisplayName || invalidName) {
+      // Buffer's Pinterest board schema can fall back to serviceId-only boards.
+      result = await runPinterestBoardsQuery(apiKey, channelId, GET_PINTEREST_BOARDS_QUERY);
+    }
+
+    if (Array.isArray(result.errors) && result.errors.length > 0) {
+      console.error("Buffer board GraphQL errors:", result.errors);
+
+      return {
+        ok: false,
+        message: "Failed to load Pinterest boards.",
+      };
+    }
+
+    const boards =
+      result.data?.channel?.metadata?.__typename === "PinterestMetadata"
+        ? result.data.channel.metadata.boards ?? []
+        : [];
+
+    return {
+      ok: true,
+      boards: boards
+        .filter(
+          (board): board is { serviceId: string; name?: string | null; displayName?: string | null } =>
+            typeof board?.serviceId === "string" && board.serviceId.length > 0
+        )
+        .map((board) => ({
+          serviceId: board.serviceId,
+          name: board.displayName ?? board.name ?? null,
+        })),
+    };
+  } catch (error) {
+    console.error("Buffer board request failed:", error);
+
+    return {
+      ok: false,
+      message: "Failed to load Pinterest boards.",
+    };
+  }
+}
+
+async function runPinterestBoardsQuery(
+  apiKey: string,
+  channelId: string,
+  query: string
+): Promise<PinterestBoardsGraphQLResponse> {
+  const response = await fetch("https://api.buffer.com", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      query,
+      variables: {
+        input: {
+          id: channelId,
+        },
+      },
+    }),
+  });
+
+  return (await response.json()) as PinterestBoardsGraphQLResponse;
+}
+
+function hasInvalidField(errors: GraphQLErrorItem[] | undefined, fieldName: string): boolean {
+  return Array.isArray(errors)
+    ? errors.some(
+        (error) =>
+          typeof error.message === "string" &&
+          error.message.includes(`Cannot query field "${fieldName}"`)
+      )
+    : false;
+}
 
 export async function createBufferPost({
   text,

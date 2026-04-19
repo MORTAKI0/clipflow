@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type ScheduleResponse = {
   ok: boolean;
@@ -13,14 +13,72 @@ type ScheduleResponse = {
   bufferError: string | null;
 };
 
+type PinterestBoard = {
+  serviceId: string;
+  name: string | null;
+};
+
+type PinterestBoardsResponse = {
+  ok: boolean;
+  boards: PinterestBoard[];
+  message: string | null;
+};
+
 export default function ClipFlowPage() {
   const [videoUrl, setVideoUrl] = useState("");
   const [caption, setCaption] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [boardServiceId, setBoardServiceId] = useState("");
   const [pinTitle, setPinTitle] = useState("");
+  const [boards, setBoards] = useState<PinterestBoard[]>([]);
+  const [boardsLoading, setBoardsLoading] = useState(true);
+  const [boardsMessage, setBoardsMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ScheduleResponse | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadBoards = async () => {
+      setBoardsLoading(true);
+      setBoardsMessage(null);
+
+      try {
+        const response = await fetch("/api/pinterest-boards");
+        const data = (await response.json()) as PinterestBoardsResponse;
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "Failed to load Pinterest boards.");
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setBoards(data.boards);
+        setBoardServiceId("");
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : "Failed to load Pinterest boards.";
+        setBoards([]);
+        setBoardServiceId("");
+        setBoardsMessage(message);
+      } finally {
+        if (isMounted) {
+          setBoardsLoading(false);
+        }
+      }
+    };
+
+    void loadBoards();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -49,7 +107,6 @@ export default function ClipFlowPage() {
         setVideoUrl("");
         setCaption("");
         setScheduledAt("");
-        setBoardServiceId("");
         setPinTitle("");
       }
     } catch (error) {
@@ -80,6 +137,12 @@ export default function ClipFlowPage() {
             Pinterest board details you need.
           </p>
         </div>
+
+        {boardsMessage && (
+          <section className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4">
+            <p className="text-sm font-medium text-red-800">{boardsMessage}</p>
+          </section>
+        )}
 
         {result && (
           <section
@@ -165,16 +228,23 @@ export default function ClipFlowPage() {
 
           <div>
             <label htmlFor="boardServiceId" className="mb-1.5 block text-sm font-medium text-stone-700">
-              Pinterest Board ID
+              Pinterest Board
             </label>
-            <input
+            <select
               id="boardServiceId"
-              type="text"
+              required
               value={boardServiceId}
               onChange={(event) => setBoardServiceId(event.target.value)}
-              placeholder="Optional now, required by Buffer for Pinterest"
-              className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-rose-400"
-            />
+              disabled={boardsLoading || boards.length === 0}
+              className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-rose-400 disabled:cursor-not-allowed disabled:bg-stone-100"
+            >
+              <option value="">{boardsLoading ? "Loading Pinterest boards..." : "Select a Pinterest board"}</option>
+              {boards.map((board) => (
+                <option key={board.serviceId} value={board.serviceId}>
+                  {board.name ?? board.serviceId}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -193,7 +263,7 @@ export default function ClipFlowPage() {
 
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || boardsLoading || boards.length === 0 || !boardServiceId}
             className="w-full rounded-2xl bg-stone-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {isLoading ? "Scheduling..." : "Schedule to Pinterest"}
