@@ -12,17 +12,17 @@ export type PinterestBoard = {
   name: string | null;
 };
 
+export type BufferPost = {
+  id: string;
+  text: string | null;
+  dueAt: string | null;
+};
+
 type GraphQLErrorItem = {
   message?: string;
   extensions?: {
     code?: string;
   };
-};
-
-type BufferPost = {
-  id: string;
-  text: string | null;
-  dueAt: string | null;
 };
 
 type BufferSuccessResult = {
@@ -68,6 +68,43 @@ type PinterestBoardsGraphQLResponse = {
   };
   errors?: GraphQLErrorItem[];
 };
+
+type OrganizationsGraphQLResponse = {
+  data?: {
+    account?: {
+      organizations?: Array<{
+        id?: string | null;
+        limits?: {
+          scheduledPosts?: number | null;
+        } | null;
+      }> | null;
+    } | null;
+  };
+  errors?: GraphQLErrorItem[];
+};
+
+type ScheduledPostsGraphQLResponse = {
+  data?: {
+    posts?: {
+      totalCount?: number | null;
+      edges?: Array<{
+        node?: {
+          id?: string | null;
+          dueAt?: string | null;
+          status?: string | null;
+          channelId?: string | null;
+        } | null;
+      }> | null;
+      pageInfo?: {
+        hasNextPage?: boolean | null;
+        endCursor?: string | null;
+      } | null;
+    } | null;
+  };
+  errors?: GraphQLErrorItem[];
+};
+
+type ScheduledPostsConnection = NonNullable<ScheduledPostsGraphQLResponse["data"]>["posts"];
 
 const CREATE_POST_MUTATION = `
   mutation CreatePost($input: CreatePostInput!) {
@@ -135,12 +172,56 @@ const GET_PINTEREST_BOARDS_QUERY = `
   }
 `;
 
+const GET_ORGANIZATIONS_QUERY = `
+  query GetOrganizations {
+    account {
+      organizations {
+        id
+        limits {
+          scheduledPosts
+        }
+      }
+    }
+  }
+`;
+
+const GET_SCHEDULED_POSTS_COUNT_QUERY = `
+  query GetScheduledPostsCount($first: Int!, $after: Cursor, $input: PostsInput!) {
+    posts(first: $first, after: $after, input: $input) {
+      totalCount
+      edges {
+        node {
+          id
+          dueAt
+          status
+          channelId
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+`;
+
 type PinterestBoardsSuccessResult = {
   ok: true;
   boards: PinterestBoard[];
 };
 
 type PinterestBoardsFailureResult = {
+  ok: false;
+  message: string;
+};
+
+type ScheduledPostsCountSuccessResult = {
+  ok: true;
+  count: number;
+  limit: number | null;
+};
+
+type ScheduledPostsCountFailureResult = {
   ok: false;
   message: string;
 };
@@ -206,28 +287,105 @@ export async function getPinterestBoards(): Promise<PinterestBoardsSuccessResult
   }
 }
 
+export async function getScheduledPostsCount(): Promise<
+  ScheduledPostsCountSuccessResult | ScheduledPostsCountFailureResult
+> {
+  const apiKey = process.env.BUFFER_API_KEY;
+  const channelId = process.env.BUFFER_PINTEREST_CHANNEL_ID;
+
+  if (!apiKey || !channelId) {
+    return {
+      ok: false,
+      message: "Buffer API configuration is missing.",
+    };
+  }
+
+  try {
+    const organizationsResult = await runBufferQuery<OrganizationsGraphQLResponse>(apiKey, {
+      query: GET_ORGANIZATIONS_QUERY,
+    });
+
+    if (Array.isArray(organizationsResult.errors) && organizationsResult.errors.length > 0) {
+      console.error("Buffer organization GraphQL errors:", organizationsResult.errors);
+
+      return {
+        ok: false,
+        message: "Failed to load scheduled post count.",
+      };
+    }
+
+    const organization = organizationsResult.data?.account?.organizations?.find(
+      (item): item is { id: string; limits?: { scheduledPosts?: number | null } | null } =>
+        typeof item?.id === "string" && item.id.length > 0
+    );
+
+    if (!organization) {
+      return {
+        ok: false,
+        message: "Failed to load scheduled post count.",
+      };
+    }
+
+    const scheduledPostsResult = await runBufferQuery<ScheduledPostsGraphQLResponse>(apiKey, {
+      query: GET_SCHEDULED_POSTS_COUNT_QUERY,
+      variables: {
+        first: 1,
+        after: null,
+        input: {
+          organizationId: organization.id,
+          filter: {
+            status: ["scheduled"],
+            channelIds: [channelId],
+          },
+        },
+      },
+    });
+
+    if (Array.isArray(scheduledPostsResult.errors) && scheduledPostsResult.errors.length > 0) {
+      console.error("Buffer scheduled posts GraphQL errors:", scheduledPostsResult.errors);
+
+      return {
+        ok: false,
+        message: "Failed to load scheduled post count.",
+      };
+    }
+
+    const posts = scheduledPostsResult.data?.posts;
+    const count = await resolveScheduledPostsCount({
+      apiKey,
+      organizationId: organization.id,
+      channelId,
+      posts,
+    });
+
+    return {
+      ok: true,
+      count,
+      limit: typeof organization.limits?.scheduledPosts === "number" ? organization.limits.scheduledPosts : null,
+    };
+  } catch (error) {
+    console.error("Buffer scheduled count request failed:", error);
+
+    return {
+      ok: false,
+      message: "Failed to load scheduled post count.",
+    };
+  }
+}
+
 async function runPinterestBoardsQuery(
   apiKey: string,
   channelId: string,
   query: string
 ): Promise<PinterestBoardsGraphQLResponse> {
-  const response = await fetch("https://api.buffer.com", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      query,
-      variables: {
-        input: {
-          id: channelId,
-        },
+  return runBufferQuery<PinterestBoardsGraphQLResponse>(apiKey, {
+    query,
+    variables: {
+      input: {
+        id: channelId,
       },
-    }),
+    },
   });
-
-  return (await response.json()) as PinterestBoardsGraphQLResponse;
 }
 
 function hasInvalidField(errors: GraphQLErrorItem[] | undefined, fieldName: string): boolean {
@@ -238,6 +396,73 @@ function hasInvalidField(errors: GraphQLErrorItem[] | undefined, fieldName: stri
           error.message.includes(`Cannot query field "${fieldName}"`)
       )
     : false;
+}
+
+async function runBufferQuery<T>(
+  apiKey: string,
+  payload: {
+    query: string;
+    variables?: Record<string, unknown>;
+  }
+): Promise<T> {
+  const response = await fetch("https://api.buffer.com", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return (await response.json()) as T;
+}
+
+async function resolveScheduledPostsCount({
+  apiKey,
+  organizationId,
+  channelId,
+  posts,
+}: {
+  apiKey: string;
+  organizationId: string;
+  channelId: string;
+  posts?: ScheduledPostsConnection | null;
+}): Promise<number> {
+  if (typeof posts?.totalCount === "number") {
+    return posts.totalCount;
+  }
+
+  let count = Array.isArray(posts?.edges) ? posts.edges.length : 0;
+  let cursor = posts?.pageInfo?.endCursor ?? null;
+  let hasNextPage = posts?.pageInfo?.hasNextPage === true;
+
+  while (hasNextPage) {
+    const nextPage = await runBufferQuery<ScheduledPostsGraphQLResponse>(apiKey, {
+      query: GET_SCHEDULED_POSTS_COUNT_QUERY,
+      variables: {
+        first: 100,
+        after: cursor,
+        input: {
+          organizationId,
+          filter: {
+            status: ["scheduled"],
+            channelIds: [channelId],
+          },
+        },
+      },
+    });
+
+    if (Array.isArray(nextPage.errors) && nextPage.errors.length > 0) {
+      console.error("Buffer scheduled posts pagination GraphQL errors:", nextPage.errors);
+      break;
+    }
+
+    count += Array.isArray(nextPage.data?.posts?.edges) ? nextPage.data.posts.edges.length : 0;
+    cursor = nextPage.data?.posts?.pageInfo?.endCursor ?? null;
+    hasNextPage = nextPage.data?.posts?.pageInfo?.hasNextPage === true;
+  }
+
+  return count;
 }
 
 export async function createBufferPost({

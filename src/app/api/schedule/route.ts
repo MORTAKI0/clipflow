@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { createBufferPost } from "@/lib/buffer";
-import { cleanupRailwayAssets, downloadMediaFromRailway, RailwayRequestError } from "@/lib/railway";
+import { schedulePinterestPost } from "@/lib/schedule-post";
 
 export async function POST(request: Request) {
-  let uploadedKeys: string[] = [];
-
   try {
     const body = await request.json();
 
@@ -51,64 +48,38 @@ export async function POST(request: Request) {
       );
     }
 
-    const railwayAssets = await downloadMediaFromRailway(videoUrl);
-    uploadedKeys = [railwayAssets.videoKey, railwayAssets.thumbnailKey];
-
-    const bufferResult = await createBufferPost({
-      text: caption,
+    const result = await schedulePinterestPost({
+      sourceVideoUrl: videoUrl,
+      caption,
       dueAt: dueAt.toISOString(),
-      videoUrl: railwayAssets.videoUrl,
-      thumbnailUrl: railwayAssets.thumbnailUrl,
       boardServiceId,
       pinTitle,
     });
 
-    if (!bufferResult.ok) {
-      const cleanupResult = await cleanupRailwayAssets(uploadedKeys);
-      const cleanupNote = cleanupResult.ok ? "" : " Cleanup of uploaded R2 assets failed.";
-      const status = bufferResult.kind === "config_error" ? 500 : 502;
-
-      return NextResponse.json(
-        {
-          ok: false,
-          message: `Video and thumbnail uploaded, but Buffer could not create the Pinterest post.${cleanupNote}`,
-          r2Url: railwayAssets.videoUrl,
-          thumbnailUrl: railwayAssets.thumbnailUrl,
-          scheduledPost: null,
-          bufferError: bufferResult.message,
-        },
-        { status }
-      );
-    }
-
     return NextResponse.json(
       {
-        ok: true,
-        message: "Pinterest post created in Buffer.",
-        r2Url: railwayAssets.videoUrl,
-        thumbnailUrl: railwayAssets.thumbnailUrl,
-        scheduledPost: bufferResult.post,
-        bufferError: null,
+        ok: result.ok,
+        message: result.message,
+        r2Url: result.r2Url,
+        thumbnailUrl: result.thumbnailUrl,
+        scheduledPost: result.scheduledPost,
+        bufferError: result.bufferError,
       },
-      { status: 200 }
+      { status: result.statusCode }
     );
   } catch (error) {
-    if (uploadedKeys.length > 0) {
-      await cleanupRailwayAssets(uploadedKeys);
-    }
-
     console.error("Error in schedule route:", error);
 
     return NextResponse.json(
       {
         ok: false,
-        message: error instanceof Error ? error.message : "Unable to process schedule request.",
+        message: "Unable to process schedule request.",
         r2Url: null,
         thumbnailUrl: null,
         scheduledPost: null,
         bufferError: null,
       },
-      { status: error instanceof RailwayRequestError ? error.status : 500 }
+      { status: 500 }
     );
   }
 }
