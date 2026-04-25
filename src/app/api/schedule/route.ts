@@ -17,6 +17,10 @@ export async function POST(request: Request) {
       typeof body.pinTitle === "string" && body.pinTitle.trim()
         ? body.pinTitle.trim()
         : undefined;
+    const destinationUrl =
+      typeof body.destinationUrl === "string" && body.destinationUrl.trim()
+        ? body.destinationUrl.trim()
+        : undefined;
 
     if (!videoUrl || !caption || !scheduledAt) {
       return NextResponse.json(
@@ -27,6 +31,7 @@ export async function POST(request: Request) {
           thumbnailUrl: null,
           scheduledPost: null,
           bufferError: null,
+          errorCode: "validation_failed",
         },
         { status: 400 }
       );
@@ -43,6 +48,7 @@ export async function POST(request: Request) {
           thumbnailUrl: null,
           scheduledPost: null,
           bufferError: null,
+          errorCode: "validation_failed",
         },
         { status: 400 }
       );
@@ -54,6 +60,7 @@ export async function POST(request: Request) {
       dueAt: dueAt.toISOString(),
       boardServiceId,
       pinTitle,
+      destinationUrl,
     });
 
     return NextResponse.json(
@@ -64,6 +71,7 @@ export async function POST(request: Request) {
         thumbnailUrl: result.thumbnailUrl,
         scheduledPost: result.scheduledPost,
         bufferError: result.bufferError,
+        errorCode: result.errorCode,
       },
       { status: result.statusCode }
     );
@@ -78,6 +86,7 @@ export async function POST(request: Request) {
         thumbnailUrl: null,
         scheduledPost: null,
         bufferError: null,
+        errorCode: "schedule_failed",
       },
       { status: 500 }
     );

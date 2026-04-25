@@ -5,6 +5,7 @@ type CreateBufferPostArgs = {
   thumbnailUrl: string;
   boardServiceId?: string;
   pinTitle?: string;
+  destinationUrl?: string;
 };
 
 export type PinterestBoard = {
@@ -468,6 +469,7 @@ export async function createBufferPost({
   thumbnailUrl,
   boardServiceId,
   pinTitle,
+  destinationUrl,
 }: CreateBufferPostArgs): Promise<BufferRequestResult> {
   const apiKey = process.env.BUFFER_API_KEY;
   const channelId = process.env.BUFFER_PINTEREST_CHANNEL_ID;
@@ -494,6 +496,7 @@ export async function createBufferPost({
       pinterest: {
         boardServiceId: string;
         title?: string;
+        url?: string;
       };
     };
   } = {
@@ -513,6 +516,7 @@ export async function createBufferPost({
       pinterest: {
         boardServiceId,
         ...(pinTitle ? { title: pinTitle } : {}),
+        ...(destinationUrl ? { url: destinationUrl } : {}),
       },
     };
   }

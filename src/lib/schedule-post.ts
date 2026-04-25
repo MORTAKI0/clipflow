@@ -1,5 +1,5 @@
 import { type BufferPost, createBufferPost } from "@/lib/buffer";
-import { cleanupRailwayAssets, downloadMediaFromRailway, RailwayRequestError } from "@/lib/railway";
+import { cleanupDownloaderAssets, downloadMedia, DownloaderRequestError } from "@/lib/downloader";
 
 export type SchedulePinterestPostInput = {
   sourceVideoUrl: string;
@@ -7,6 +7,7 @@ export type SchedulePinterestPostInput = {
   dueAt: string;
   boardServiceId?: string;
   pinTitle?: string;
+  destinationUrl?: string;
 };
 
 export type SchedulePinterestPostResult = {
@@ -19,6 +20,7 @@ export type SchedulePinterestPostResult = {
   thumbnailUrl: string | null;
   scheduledPost: BufferPost | null;
   bufferError: string | null;
+  errorCode?: string;
 };
 
 export async function schedulePinterestPost({
@@ -27,24 +29,26 @@ export async function schedulePinterestPost({
   dueAt,
   boardServiceId,
   pinTitle,
+  destinationUrl,
 }: SchedulePinterestPostInput): Promise<SchedulePinterestPostResult> {
   let uploadedKeys: string[] = [];
 
   try {
-    const railwayAssets = await downloadMediaFromRailway(sourceVideoUrl);
-    uploadedKeys = [railwayAssets.videoKey, railwayAssets.thumbnailKey];
+    const downloaderAssets = await downloadMedia(sourceVideoUrl);
+    uploadedKeys = [downloaderAssets.videoKey, downloaderAssets.thumbnailKey];
 
     const bufferResult = await createBufferPost({
       text: caption,
       dueAt,
-      videoUrl: railwayAssets.videoUrl,
-      thumbnailUrl: railwayAssets.thumbnailUrl,
+      videoUrl: downloaderAssets.videoUrl,
+      thumbnailUrl: downloaderAssets.thumbnailUrl,
       boardServiceId,
       pinTitle,
+      destinationUrl,
     });
 
     if (!bufferResult.ok) {
-      const cleanupResult = await cleanupRailwayAssets(uploadedKeys);
+      const cleanupResult = await cleanupDownloaderAssets(uploadedKeys);
       const cleanupNote = cleanupResult.ok ? "" : " Cleanup of uploaded R2 assets failed.";
 
       return {
@@ -53,10 +57,11 @@ export async function schedulePinterestPost({
         message: `Video and thumbnail uploaded, but Buffer could not create the Pinterest post.${cleanupNote}`,
         sourceVideoUrl,
         dueAt,
-        r2Url: railwayAssets.videoUrl,
-        thumbnailUrl: railwayAssets.thumbnailUrl,
+        r2Url: downloaderAssets.videoUrl,
+        thumbnailUrl: downloaderAssets.thumbnailUrl,
         scheduledPost: null,
         bufferError: bufferResult.message,
+        errorCode: "buffer_create_failed",
       };
     }
 
@@ -66,19 +71,19 @@ export async function schedulePinterestPost({
       message: "Pinterest post created in Buffer.",
       sourceVideoUrl,
       dueAt,
-      r2Url: railwayAssets.videoUrl,
-      thumbnailUrl: railwayAssets.thumbnailUrl,
+      r2Url: downloaderAssets.videoUrl,
+      thumbnailUrl: downloaderAssets.thumbnailUrl,
       scheduledPost: bufferResult.post,
       bufferError: null,
     };
   } catch (error) {
     if (uploadedKeys.length > 0) {
-      await cleanupRailwayAssets(uploadedKeys);
+      await cleanupDownloaderAssets(uploadedKeys);
     }
 
     return {
       ok: false,
-      statusCode: error instanceof RailwayRequestError ? error.status : 500,
+      statusCode: error instanceof DownloaderRequestError ? error.status : 500,
       message: error instanceof Error ? error.message : "Unable to process schedule request.",
       sourceVideoUrl,
       dueAt,
@@ -86,6 +91,7 @@ export async function schedulePinterestPost({
       thumbnailUrl: null,
       scheduledPost: null,
       bufferError: null,
+      errorCode: error instanceof DownloaderRequestError ? error.errorCode : "schedule_failed",
     };
   }
 }

@@ -10,6 +10,7 @@ type DraftPostRow = {
   caption: string;
   scheduledAt: string;
   pinTitle: string;
+  destinationUrl: string;
 };
 
 type RowErrors = {
@@ -43,6 +44,7 @@ type BulkScheduleResult = {
   r2Url: string | null;
   thumbnailUrl: string | null;
   bufferError: string | null;
+  errorCode?: string;
   scheduledAt?: string;
 };
 
@@ -62,18 +64,50 @@ type ScheduledCountResponse = {
   message: string | null;
 };
 
-function createEmptyRow(): DraftPostRow {
+async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (!contentType.includes("application/json")) {
+    const body = await response.text();
+    const detail = body.startsWith("<!DOCTYPE") || body.startsWith("<html")
+      ? `${response.status} ${response.statusText}`
+      : body.slice(0, 240);
+
+    throw new Error(`${fallbackMessage} Received a non-JSON response from the server: ${detail}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+function createEmptyRow(id = crypto.randomUUID()): DraftPostRow {
   return {
-    id: crypto.randomUUID(),
+    id,
     videoUrl: "",
     caption: "",
     scheduledAt: "",
     pinTitle: "",
+    destinationUrl: "",
   };
 }
 
+function getDownloaderHint(errorCode?: string): string | null {
+  switch (errorCode) {
+    case "instagram_restricted_audience":
+      return "Try re-exporting Instagram cookies from the account that can view this reel.";
+    case "instagram_login_required":
+    case "instagram_cookies_invalid":
+      return "Confirm the reel opens normally in the same logged-in browser account, then re-export cookies.";
+    case "instagram_rate_limited":
+      return "Wait briefly before retrying; repeated attempts can extend Instagram rate limiting.";
+    case "instagram_unavailable":
+      return "Check whether the reel is private, removed, audience-limited, or unavailable to that account.";
+    default:
+      return null;
+  }
+}
+
 export default function ClipFlowPage() {
-  const [rows, setRows] = useState<DraftPostRow[]>([createEmptyRow()]);
+  const [rows, setRows] = useState<DraftPostRow[]>([createEmptyRow("initial-row")]);
   const [rowErrors, setRowErrors] = useState<Record<string, RowErrors>>({});
   const [boardServiceId, setBoardServiceId] = useState("");
   const [boardError, setBoardError] = useState<string | null>(null);
@@ -95,7 +129,10 @@ export default function ClipFlowPage() {
 
       try {
         const response = await fetch("/api/pinterest-boards");
-        const data = (await response.json()) as PinterestBoardsResponse;
+        const data = await readJsonResponse<PinterestBoardsResponse>(
+          response,
+          "Failed to load Pinterest boards."
+        );
 
         if (!response.ok || !data.ok) {
           throw new Error(data.message || "Failed to load Pinterest boards.");
@@ -160,7 +197,10 @@ export default function ClipFlowPage() {
 
       try {
         const response = await fetch("/api/scheduled-count");
-        const data = (await response.json()) as ScheduledCountResponse;
+        const data = await readJsonResponse<ScheduledCountResponse>(
+          response,
+          "Failed to load scheduled post count."
+        );
 
         if (!response.ok || !data.ok) {
           throw new Error(data.message || "Failed to load scheduled post count.");
@@ -281,13 +321,14 @@ export default function ClipFlowPage() {
         caption: row.caption.trim(),
         scheduledAt: row.scheduledAt.trim(),
         pinTitle: row.pinTitle.trim(),
+        destinationUrl: row.destinationUrl.trim(),
       }))
-      .filter((row) => row.videoUrl || row.caption || row.scheduledAt);
+      .filter((row) => row.videoUrl || row.caption || row.scheduledAt || row.destinationUrl);
 
     setIsLoading(true);
 
     try {
-      const response = await fetch("/api/schedule-bulk", {
+      const response = await fetch("/api/schedulebulk", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -298,7 +339,7 @@ export default function ClipFlowPage() {
         }),
       });
 
-      const data = (await response.json()) as BulkScheduleResponse;
+      const data = await readJsonResponse<BulkScheduleResponse>(response, "Failed to schedule posts.");
 
       if (!response.ok || !data.ok) {
         throw new Error(data.message || "Failed to schedule posts.");
@@ -308,7 +349,10 @@ export default function ClipFlowPage() {
       setRows([createEmptyRow()]);
 
       const countResponse = await fetch("/api/scheduled-count");
-      const countData = (await countResponse.json()) as ScheduledCountResponse;
+      const countData = await readJsonResponse<ScheduledCountResponse>(
+        countResponse,
+        "Failed to load scheduled post count."
+      );
 
       if (countResponse.ok && countData.ok) {
         setCount(countData.count);
@@ -388,6 +432,12 @@ export default function ClipFlowPage() {
                       </p>
                     )}
                     <p className="mt-2 text-sm text-stone-700">{item.message}</p>
+                    {!item.ok && getDownloaderHint(item.errorCode) && (
+                      <p className="mt-2 text-sm text-stone-700">{getDownloaderHint(item.errorCode)}</p>
+                    )}
+                    {!item.ok && item.errorCode && (
+                      <p className="mt-2 text-xs font-medium text-stone-500">Technical code: {item.errorCode}</p>
+                    )}
                     {item.scheduledPost?.id && (
                       <p className="mt-2 text-sm text-stone-700">
                         Buffer post ID: <span className="font-mono">{item.scheduledPost.id}</span>
@@ -529,6 +579,26 @@ export default function ClipFlowPage() {
                       placeholder="Optional Pinterest title"
                       className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-rose-400"
                     />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor={`destinationUrl-${row.id}`}
+                      className="mb-1.5 block text-sm font-medium text-stone-700"
+                    >
+                      Destination Link
+                    </label>
+                    <input
+                      id={`destinationUrl-${row.id}`}
+                      type="url"
+                      value={row.destinationUrl}
+                      onChange={(event) => updateRow(row.id, "destinationUrl", event.target.value)}
+                      placeholder="https://example.com/product-page"
+                      className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-rose-400"
+                    />
+                    <p className="mt-1 text-xs leading-5 text-stone-500">
+                      Optional Pin click-through URL. ClipFlow sends this to Buffer, but Buffer may not save it yet.
+                    </p>
                   </div>
                 </div>
               </section>

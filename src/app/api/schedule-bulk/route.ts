@@ -19,6 +19,7 @@ export async function POST(request: Request) {
             caption?: unknown;
             scheduledAt?: unknown;
             pinTitle?: unknown;
+            destinationUrl?: unknown;
           } => typeof item === "object" && item !== null
         )
       : [];
@@ -45,6 +46,10 @@ export async function POST(request: Request) {
       const scheduledAt = typeof item.scheduledAt === "string" ? item.scheduledAt.trim() : "";
       const pinTitle =
         typeof item.pinTitle === "string" && item.pinTitle.trim() ? item.pinTitle.trim() : undefined;
+      const destinationUrl =
+        typeof item.destinationUrl === "string" && item.destinationUrl.trim()
+          ? item.destinationUrl.trim()
+          : undefined;
 
       if (!videoUrl || !caption || !scheduledAt) {
         results.push({
@@ -56,6 +61,7 @@ export async function POST(request: Request) {
           r2Url: null,
           thumbnailUrl: null,
           bufferError: null,
+          errorCode: "validation_failed",
         });
         continue;
       }
@@ -72,6 +78,7 @@ export async function POST(request: Request) {
           r2Url: null,
           thumbnailUrl: null,
           bufferError: null,
+          errorCode: "validation_failed",
         });
         continue;
       }
@@ -82,6 +89,7 @@ export async function POST(request: Request) {
         dueAt: dueAt.toISOString(),
         boardServiceId,
         pinTitle,
+        destinationUrl,
       });
 
       results.push({
@@ -93,6 +101,7 @@ export async function POST(request: Request) {
         r2Url: result.r2Url,
         thumbnailUrl: result.thumbnailUrl,
         bufferError: result.bufferError,
+        errorCode: result.errorCode,
         scheduledAt: result.dueAt,
       });
     }

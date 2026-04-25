@@ -1,36 +1,49 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+ClipFlow schedules TikTok and Instagram videos to Pinterest through Buffer. For local development, the Next.js app calls a local FastAPI downloader running on this Windows machine.
 
-## Getting Started
+## Local Setup
 
-First, run the development server:
+### Next.js `.env.local`
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```env
+DOWNLOADER_SERVICE_URL=http://127.0.0.1:8000
+BUFFER_API_KEY=your_key
+BUFFER_PINTEREST_CHANNEL_ID=your_channel_id
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`RAILWAY_SERVICE_URL` is still accepted as a fallback, but `DOWNLOADER_SERVICE_URL` is preferred.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Downloader `.env`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create this in `C:\Users\abmor\Desktop\clipflow-downloader\.env`:
 
-## Learn More
+```env
+DOWNLOADS_DIR=C:\Users\abmor\Desktop\CONTENT\vids raw
+INSTAGRAM_COOKIES_FILE=C:\Users\abmor\Desktop\CONTENT\cookies\cookies-ig.txt
+TIKTOK_COOKIES_FILE=C:\Users\abmor\Desktop\CONTENT\cookies\www.tiktok.com_cookies.txt
+R2_ACCOUNT_ID=your_account_id
+R2_BUCKET=your_bucket
+R2_PUBLIC_URL=https://your-public-r2-url.r2.dev
+R2_ACCESS_KEY=your_access_key
+R2_SECRET_KEY=your_secret_key
+```
 
-To learn more about Next.js, take a look at the following resources:
+The downloader also supports `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Run Locally
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Start the downloader:
 
-## Deploy on Vercel
+```powershell
+cd C:\Users\abmor\Desktop\clipflow-downloader
+python -m pip install -r requirements.txt
+python -m uvicorn main:app --host 127.0.0.1 --port 8000
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Start the Next.js app:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```powershell
+cd C:\Users\abmor\Desktop\clipflow
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
