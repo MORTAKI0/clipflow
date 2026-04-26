@@ -4,11 +4,19 @@ import { useEffect, useState } from "react";
 
 const LAST_BOARD_STORAGE_KEY = "clipflow:last-board-service-id";
 
+const TIME_PRESETS = [
+  { label: "12 PM", value: "12:00" },
+  { label: "3 PM", value: "15:00" },
+  { label: "6 PM", value: "18:00" },
+  { label: "10 PM", value: "22:00" },
+] as const;
+
 type DraftPostRow = {
   id: string;
   videoUrl: string;
   caption: string;
-  scheduledAt: string;
+  scheduleDate: string;
+  scheduleTime: string;
   pinTitle: string;
   destinationUrl: string;
 };
@@ -16,7 +24,8 @@ type DraftPostRow = {
 type RowErrors = {
   videoUrl?: string;
   caption?: string;
-  scheduledAt?: string;
+  scheduleDate?: string;
+  scheduleTime?: string;
 };
 
 type ScheduledPost = {
@@ -79,23 +88,34 @@ async function readJsonResponse<T>(response: Response, fallbackMessage: string):
   return (await response.json()) as T;
 }
 
-function createEmptyRow(id = crypto.randomUUID()): DraftPostRow {
+function createEmptyRow(
+  id = crypto.randomUUID(),
+  scheduleDefaults: Pick<DraftPostRow, "scheduleDate" | "scheduleTime"> = {
+    scheduleDate: "",
+    scheduleTime: "",
+  }
+): DraftPostRow {
   return {
     id,
     videoUrl: "",
     caption: "",
-    scheduledAt: "",
+    scheduleDate: scheduleDefaults.scheduleDate,
+    scheduleTime: scheduleDefaults.scheduleTime,
     pinTitle: "",
     destinationUrl: "",
   };
 }
 
+function composeScheduledAt(row: Pick<DraftPostRow, "scheduleDate" | "scheduleTime">) {
+  return `${row.scheduleDate}T${row.scheduleTime}`;
+}
+
 function getDownloaderHint(errorCode?: string): string | null {
   switch (errorCode) {
     case "tiktok_impersonation_required":
-      return "The downloader runtime may be missing yt-dlp impersonation support. This can cause intermittent 403 errors even when cookies are loaded.";
+      return "The downloader runtime may be missing yt-dlp impersonation support. This can cause the same TikTok URL to sometimes work and sometimes fail. Try updating the downloader runtime or using a yt-dlp setup with available impersonation targets.";
     case "tiktok_forbidden":
-      return "The downloader runtime may be missing yt-dlp impersonation support. This can cause intermittent 403 errors even when cookies are loaded.";
+      return "TikTok blocked this request. The downloader runtime may be missing yt-dlp impersonation support, which can make the same TikTok URL sometimes work and sometimes fail. Try updating the downloader runtime or using a yt-dlp setup with available impersonation targets.";
     case "tiktok_rate_limited":
       return "Wait briefly before retrying; TikTok may be rate limiting this downloader session.";
     case "tiktok_cookies_invalid":
@@ -262,7 +282,16 @@ export default function ClipFlowPage() {
   };
 
   const addRow = () => {
-    setRows((currentRows) => [...currentRows, createEmptyRow()]);
+    setRows((currentRows) => {
+      const previousRow = currentRows[currentRows.length - 1];
+      return [
+        ...currentRows,
+        createEmptyRow(crypto.randomUUID(), {
+          scheduleDate: previousRow?.scheduleDate ?? "",
+          scheduleTime: previousRow?.scheduleTime ?? "",
+        }),
+      ];
+    });
   };
 
   const removeRow = (rowId: string) => {
@@ -295,8 +324,12 @@ export default function ClipFlowPage() {
         errors.caption = "Caption is required.";
       }
 
-      if (!row.scheduledAt.trim()) {
-        errors.scheduledAt = "Schedule date & time is required.";
+      if (!row.scheduleDate.trim()) {
+        errors.scheduleDate = "Schedule date is required.";
+      }
+
+      if (!row.scheduleTime.trim()) {
+        errors.scheduleTime = "Schedule time is required.";
       }
 
       if (Object.keys(errors).length > 0) {
@@ -327,7 +360,7 @@ export default function ClipFlowPage() {
       .map((row) => ({
         videoUrl: row.videoUrl.trim(),
         caption: row.caption.trim(),
-        scheduledAt: row.scheduledAt.trim(),
+        scheduledAt: composeScheduledAt(row),
         pinTitle: row.pinTitle.trim(),
         destinationUrl: row.destinationUrl.trim(),
       }))
@@ -560,18 +593,46 @@ export default function ClipFlowPage() {
                   </div>
 
                   <div>
-                    <label htmlFor={`scheduledAt-${row.id}`} className="mb-1.5 block text-sm font-medium text-stone-700">
-                      Schedule Date &amp; Time
+                    <label
+                      htmlFor={`scheduleDate-${row.id}`}
+                      className="mb-1.5 block text-sm font-medium text-stone-700"
+                    >
+                      Schedule Date
                     </label>
                     <input
-                      id={`scheduledAt-${row.id}`}
-                      type="datetime-local"
-                      value={row.scheduledAt}
-                      onChange={(event) => updateRow(row.id, "scheduledAt", event.target.value)}
+                      id={`scheduleDate-${row.id}`}
+                      type="date"
+                      value={row.scheduleDate}
+                      onChange={(event) => updateRow(row.id, "scheduleDate", event.target.value)}
                       className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-rose-400"
                     />
-                    {rowErrors[row.id]?.scheduledAt && (
-                      <p className="mt-1 text-sm text-red-700">{rowErrors[row.id].scheduledAt}</p>
+                    {rowErrors[row.id]?.scheduleDate && (
+                      <p className="mt-1 text-sm text-red-700">{rowErrors[row.id].scheduleDate}</p>
+                    )}
+
+                    <div className="mt-3 flex flex-wrap gap-2" aria-label="Schedule time">
+                      {TIME_PRESETS.map((preset) => {
+                        const isActive = row.scheduleTime === preset.value;
+
+                        return (
+                          <button
+                            key={preset.value}
+                            type="button"
+                            onClick={() => updateRow(row.id, "scheduleTime", preset.value)}
+                            className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                              isActive
+                                ? "border-stone-900 bg-stone-900 text-white shadow-sm"
+                                : "border-stone-300 bg-white text-stone-700 hover:border-stone-400 hover:bg-stone-100"
+                            }`}
+                            aria-pressed={isActive}
+                          >
+                            {preset.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {rowErrors[row.id]?.scheduleTime && (
+                      <p className="mt-1 text-sm text-red-700">{rowErrors[row.id].scheduleTime}</p>
                     )}
                   </div>
 

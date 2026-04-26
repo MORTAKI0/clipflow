@@ -54,6 +54,7 @@ export async function downloadMedia(sourceUrl: string): Promise<DownloaderDownlo
       status: response.status,
       errorCode: errorPayload.errorCode,
       detail: errorPayload.detail,
+      diagnostics: errorPayload.diagnostics,
     });
 
     throw new DownloaderRequestError(
@@ -132,12 +133,14 @@ function parseDownloaderError(data: DownloaderDownloadResponse | null): {
   errorCode: string;
   message: string;
   detail: string | null;
+  diagnostics: Record<string, boolean | string> | null;
 } {
   if (!data) {
     return {
       errorCode: "downloader_failed",
       message: "Downloader service failed.",
       detail: null,
+      diagnostics: null,
     };
   }
 
@@ -148,6 +151,7 @@ function parseDownloaderError(data: DownloaderDownloadResponse | null): {
       errorCode,
       message: getSafeDownloaderMessage(errorCode, data.message),
       detail: typeof data.detail === "string" ? data.detail : null,
+      diagnostics: data.diagnostics ?? null,
     };
   }
 
@@ -160,17 +164,22 @@ function parseDownloaderError(data: DownloaderDownloadResponse | null): {
           ? data.detail.message
           : "Downloader service failed.",
       detail: typeof data.detail.detail === "string" ? data.detail.detail : null,
+      diagnostics: data.diagnostics ?? null,
     };
   }
 
   if (typeof data.detail === "string" && data.detail.trim()) {
-    return mapLegacyDownloaderDetail(data.detail);
+    return {
+      ...mapLegacyDownloaderDetail(data.detail),
+      diagnostics: data.diagnostics ?? null,
+    };
   }
 
   return {
     errorCode: "downloader_failed",
     message: "Downloader service failed.",
     detail: null,
+    diagnostics: data.diagnostics ?? null,
   };
 }
 
