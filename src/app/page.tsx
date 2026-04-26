@@ -92,6 +92,14 @@ function createEmptyRow(id = crypto.randomUUID()): DraftPostRow {
 
 function getDownloaderHint(errorCode?: string): string | null {
   switch (errorCode) {
+    case "tiktok_impersonation_required":
+      return "The downloader runtime may be missing yt-dlp impersonation support. This can cause intermittent 403 errors even when cookies are loaded.";
+    case "tiktok_forbidden":
+      return "The downloader runtime may be missing yt-dlp impersonation support. This can cause intermittent 403 errors even when cookies are loaded.";
+    case "tiktok_rate_limited":
+      return "Wait briefly before retrying; TikTok may be rate limiting this downloader session.";
+    case "tiktok_cookies_invalid":
+      return "Re-export TikTok cookies from the browser account that can view this video.";
     case "instagram_restricted_audience":
       return "Try re-exporting Instagram cookies from the account that can view this reel.";
     case "instagram_login_required":

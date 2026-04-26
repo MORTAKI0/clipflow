@@ -7,6 +7,7 @@ type DownloaderDownloadResponse = {
   error_code?: string;
   message?: string;
   detail?: string | DownloaderErrorDetail;
+  diagnostics?: Record<string, boolean | string>;
 };
 
 type DownloaderErrorDetail = {
@@ -141,9 +142,11 @@ function parseDownloaderError(data: DownloaderDownloadResponse | null): {
   }
 
   if (typeof data.message === "string" && data.message.trim()) {
+    const errorCode = typeof data.error_code === "string" ? data.error_code : "downloader_failed";
+
     return {
-      errorCode: typeof data.error_code === "string" ? data.error_code : "downloader_failed",
-      message: data.message,
+      errorCode,
+      message: getSafeDownloaderMessage(errorCode, data.message),
       detail: typeof data.detail === "string" ? data.detail : null,
     };
   }
@@ -177,6 +180,47 @@ function mapLegacyDownloaderDetail(detail: string): {
   detail: string;
 } {
   const normalizedDetail = detail.toLowerCase();
+  const isTikTokDetail = normalizedDetail.includes("[tiktok]") || normalizedDetail.includes("tiktok");
+
+  if (
+    isTikTokDetail &&
+    normalizedDetail.includes("attempting impersonation") &&
+    normalizedDetail.includes("no impersonate target is available")
+  ) {
+    return {
+      errorCode: "tiktok_impersonation_required",
+      message:
+        "TikTok blocked this request because browser impersonation support is not available in the downloader runtime.",
+      detail,
+    };
+  }
+
+  if (
+    isTikTokDetail &&
+    (normalizedDetail.includes("http error 429") ||
+      normalizedDetail.includes("too many requests") ||
+      normalizedDetail.includes("rate limit") ||
+      normalizedDetail.includes("rate limited"))
+  ) {
+    return {
+      errorCode: "tiktok_rate_limited",
+      message: "TikTok rate limited this download request.",
+      detail,
+    };
+  }
+
+  if (
+    isTikTokDetail &&
+    (normalizedDetail.includes("http error 403") ||
+      normalizedDetail.includes("403: forbidden") ||
+      normalizedDetail.includes("403 forbidden"))
+  ) {
+    return {
+      errorCode: "tiktok_forbidden",
+      message: "TikTok blocked this download request.",
+      detail,
+    };
+  }
 
   if (
     normalizedDetail.includes("isn't available to everyone") ||
@@ -259,4 +303,19 @@ function mapLegacyDownloaderDetail(detail: string): {
     message: detail,
     detail,
   };
+}
+
+function getSafeDownloaderMessage(errorCode: string, fallbackMessage: string): string {
+  switch (errorCode) {
+    case "tiktok_impersonation_required":
+      return "TikTok blocked this request because browser impersonation support is not available in the downloader runtime.";
+    case "tiktok_forbidden":
+      return "TikTok blocked this download request.";
+    case "tiktok_rate_limited":
+      return "TikTok rate limited this download request.";
+    case "tiktok_cookies_invalid":
+      return "TikTok cookies are invalid, expired, or insufficient for this video.";
+    default:
+      return fallbackMessage;
+  }
 }
